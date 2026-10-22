@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target
+
+# Real configuration must never be committed — only config.example.yaml lives
+# in the repository (no credentials should ever be needed at all: upstream
+# access is anonymous).
+/config.yaml
+*.local.yaml
+*.local.yml
+
+# Editor / OS noise
+*.swp
+.idea/
+.vscode/
+.DS_Store

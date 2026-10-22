@@ -1,0 +1,15 @@
+# Keep the build context tiny and free of anything with real values.
+.git
+.github
+.gitignore
+.dockerignore
+Dockerfile
+
+# Build artifacts (the image builds its own)
+target/
+
+# Real configuration / anything possibly containing real values. The runtime
+# container receives its config via a mounted volume, never via the image.
+config.yaml
+*.local.yaml
+*.local.yml
