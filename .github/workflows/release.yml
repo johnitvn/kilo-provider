@@ -1,0 +1,126 @@
+name: release
+
+# Runs on every push to main. Two phases happen in the same run:
+#   1. When a regular commit merges: release-please creates/updates a Release PR
+#      ("chore(main): release x.y.z"). No release is created, so the docker job
+#      is skipped.
+#   2. When that Release PR merges: release-please tags the release
+#      (`vX.Y.Z`) and creates the GitHub Release in *this same run*, and the
+#      docker job immediately publishes the image from the tagged ref.
+# We deliberately do NOT trigger publication from tag push events: tags created
+# with the built-in GITHUB_TOKEN do not start workflows. Gating on the action's
+# outputs in this same run avoids that limitation entirely.
+
+on:
+  push:
+    branches: [main]
+  # Manual recovery path: if a release run was cancelled by the pending-run
+  # replacement rule of the concurrency group (or docker-publish failed after
+  # the tag exists), the Release PR label stays "pending" and the next run on
+  # main still picks it up — but with no further merges, this manual trigger
+  # is the way to complete the tag + publish.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize runs on main: a Release PR merge racing a regular commit merge
+  # must not skip the docker publish. Never cancel an in-progress release run:
+  # killing it after the tag was created but before the image is pushed would
+  # silently drop the release image.
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release-please (Release PR / tag / GitHub release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      # For a single package at path ".", release-please-action sets these as
+      # UNPREFIXED root-component outputs, and only when a genuine release was
+      # created. On a run that merely created/updated the Release PR they are
+      # unset (advisor: releases_created is "false", release_created unset).
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Run release-please (manifest mode)
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  docker-publish:
+    name: docker publish to GHCR
+    runs-on: ubuntu-latest
+    needs: release-please
+    # STRICT gate: run only when a real release artifact (tag + GitHub release)
+    # was created by release-please in this same run. A Release-PR-only run
+    # leaves `release_created` unset, so the job never starts.
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the exact tag that was just released
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata from the release
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          # metadata-action lowercases the image name itself, so mixed-case
+          # owners/repositories are safe.
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          # The event ref here is main, not the tag, so semver patterns are fed
+          # an explicit value: release-please's `version` output (e.g. "1.2.3").
+          #
+          # Tag format decision: release-please-config.json sets
+          # `include-component-in-tag: false` (+ `include-v-in-tag: true`), so
+          # releases are tagged plain `v1.2.3` with no crate-name prefix. That
+          # means no prefix stripping is ever needed in this workflow and the
+          # semver mapping is exact: tag v1.2.3 -> image tags 1.2.3, 1.2, sha-, latest.
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
+            type=sha
+            type=raw,value=latest,enable=${{ !contains(needs.release-please.outputs.version, '-') }}
+          # pin the revision label to the commit release-please tagged at
+          # (the checked-out ref), not to the push-event SHA of the merge.
+          # NB: no "#" comments allowed inside block scalars.
+          labels: |
+            org.opencontainers.image.revision=${{ needs.release-please.outputs.sha }}
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}

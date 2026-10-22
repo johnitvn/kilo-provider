@@ -1,0 +1,26 @@
+[package]
+name = "kilo-provider"
+version = "0.1.0"
+edition = "2024"
+description = "Gateway in front of the Kilo AI API gateway: proxy pool, model catalog, circuit breaker"
+license = "Apache-2.0"
+
+[[bin]]
+name = "kilo-provider"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+# rustls-tls keeps the runtime image free of OS TLS quirks (no openssl/pkg-config needed).
+# Timeouts are deliberately NOT configured anywhere in this crate; see src/upstream.rs.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[profile.release]
+strip = "debuginfo"

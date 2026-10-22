@@ -1,0 +1,41 @@
+# Sample configuration for kilo-provider.
+#
+# Copy this file to `config.yaml` and adjust as needed. `config.yaml` (real
+# values) is gitignored and must never be committed. Upstream access is
+# ANONYMOUS — no credentials belong in this file at all.
+#
+# Below, the proxies are placeholder URLs on purpose (ports like 0000 accept
+# nothing); replace them with your real proxy endpoints.
+
+# Upstream Kilo AI gateway. `base_url` is optional; the built-in default is
+# exactly this value.
+upstream:
+  base_url: https://api.kilo.ai/api/gateway
+
+# Proxy pool. The `proxies` key is REQUIRED (an empty list is allowed).
+# Placeholder endpoints — replace with real ones, no credentials here.
+proxy_pool:
+  proxies:
+    - name: placeholder-a
+      url: http://localhost:0000
+      description: replace me with a real proxy endpoint
+    - name: placeholder-b
+      url: http://localhost:0001
+      description: replace me with a real proxy endpoint
+
+# Model catalog placeholder settings (consumed by a follow-up feature PR).
+model_catalog:
+  refresh_interval_secs: 300
+  cache_ttl_secs: 60
+
+# Circuit breaker thresholds (state machine is not yet wired into requests).
+circuit_breaker:
+  failure_threshold: 5
+  success_threshold: 3
+  open_timeout_secs: 30
+
+# Logging. `format` must be `json` or `text`; `level` is used when RUST_LOG is
+# unset (otherwise RUST_LOG wins).
+log:
+  format: text
+  level: info
