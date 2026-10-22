@@ -1,0 +1,19 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Conventional Commits prefix so release-please classifies these bumps.
+    # `chore:` does not trigger a release; add a real fix/feat commit if an
+    # action bump must land in a release.
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
